@@ -269,6 +269,7 @@ export default {
       scrollHandler: null,
       searchedKeyword: '',
       aiTerms: [],
+      removedTerms: [],
       hlTerms: [],
       didYouMean: '',
       relatedSearches: [],
@@ -644,6 +645,8 @@ export default {
         this.queryParams.startTime = ''
         this.queryParams.endTime = ''
       }
+      // 用户×掉的联想词带给后端，从本次检索的扩展词中剔除
+      this.queryParams.excludeWords = this.removedTerms.join(',')
       if(this.queryParams.type != '99'){
         this.queryParams.docType = ''
       }
@@ -824,6 +827,7 @@ export default {
       this.saveHistory(this.queryParams.keyword);
       this.sugVisible = false;
       this.queryParams.pageNum = 1;
+      this.removedTerms = [];   // 新检索重置已移除的联想词
       // 多词组合（逗号/空格/顿号/分号分隔）自动开启 AI 扩词，提高召回
       const kw = (this.queryParams.keyword || '').trim();
       if (/[\s　,，、;；]+/.test(kw) && !this.aiExpand) {
@@ -949,7 +953,7 @@ export default {
         const arr = res && res.data ? res.data : [];
         if (Array.isArray(arr) && arr.length) {
           const existing = new Set(this.aiTerms);
-          arr.forEach(w => { if (!existing.has(w)) this.aiTerms.push(w); });
+          arr.forEach(w => { if (!existing.has(w) && !this.removedTerms.includes(w)) this.aiTerms.push(w); });
         }
       }).catch(() => {});
     },
@@ -1029,13 +1033,19 @@ export default {
     // 用该联想词重新检索
     searchByTerm(w) {
       if (!w) return;
+      this.removedTerms = [];   // 换词检索，重置已移除的联想词
       this.queryParams.keyword = w;
       this.queryParams.pageNum = 1;
       this.getList();
     },
-    // 移除某个联想词
+    // 移除某个联想词：记录到 removedTerms 并立即重查，后端会把该词从扩展词中剔除，结果随之刷新
     removeTerm(i) {
+      const w = this.aiTerms[i];
       this.aiTerms.splice(i, 1);
+      if (w && !this.removedTerms.includes(w)) this.removedTerms.push(w);
+      this.queryParams.pageNum = 1;
+      this.getList();
+      this.loadAiExpandAsync();
     },
     // 命中打分：连写命中=2，分词全命中=1，都没有=0；AI 扩词命中额外 +0.2，最多 +0.6
     rowMatchScore(row) {

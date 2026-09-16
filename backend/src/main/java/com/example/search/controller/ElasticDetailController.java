@@ -568,6 +568,31 @@ public class ElasticDetailController {
 					log.error("[AI扩词调试] AI扩词失败，按原词检索", ex);
 				}
 			}
+			// 前端×掉的联想词（excludeWords）：从扩展词中剔除，本次检索不再参与查询/联想/高亮
+			String excludeWords = String.valueOf(map.getOrDefault("excludeWords", "")).trim();
+			if (StringUtils.isNotEmpty(excludeWords)) {
+				List<String> excludes = new ArrayList<>();
+				for (String w : excludeWords.split("[,，]")) {
+					if (StringUtils.isNotEmpty(w.trim())) excludes.add(w.trim());
+				}
+				if (!excludes.isEmpty()) {
+					expand.removeIf(excludes::contains);
+					log.info("剔除用户移除的联想词: {} -> 剩余扩展词: {}", excludes, expand);
+					// 多词分组（termGroups=组1|组2，组内逗号分隔）同步剔除；剔空的组整个丢弃
+					String termGroups = map.get("termGroups");
+					if (StringUtils.isNotEmpty(termGroups)) {
+						List<String> keptGroups = new ArrayList<>();
+						for (String g : termGroups.split("\\|")) {
+							List<String> kept = new ArrayList<>();
+							for (String w : g.split(",")) {
+								if (StringUtils.isNotEmpty(w.trim()) && !excludes.contains(w.trim())) kept.add(w.trim());
+							}
+							if (!kept.isEmpty()) keptGroups.add(String.join(",", kept));
+						}
+						map.put("termGroups", String.join("|", keptGroups));
+					}
+				}
+			}
 			if (!expand.isEmpty()) {
 				map.put("expandWords", String.join(",", expand));
 				aiWords = new ArrayList<>(expand); // 本地同义词/模板扩展也作为 AI 扩词结果返回给前端展示
