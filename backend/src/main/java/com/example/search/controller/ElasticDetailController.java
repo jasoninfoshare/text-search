@@ -404,7 +404,10 @@ public class ElasticDetailController {
 				String.valueOf(map.get("startTime")) + "|" +
 				String.valueOf(map.get("endTime")) + "|" +
 				String.valueOf(map.get("deptName")) + "|" +
-				String.valueOf(map.get("aiExpand"))
+				String.valueOf(map.get("aiExpand")) + "|" +
+				// excludeWords 必须纳入缓存键：× 联想词后的重查与原始搜索只差这个参数，
+				// 不纳入会命中剔除前的缓存，导致被删词复活、高亮不消失
+				String.valueOf(map.get("excludeWords"))
 		);
 		try {
 			String cached = redisTemplate.opsForValue().get(cacheKey);
