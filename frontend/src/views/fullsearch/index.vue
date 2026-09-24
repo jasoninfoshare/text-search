@@ -654,14 +654,18 @@ export default {
         this.searchedKeyword = (this.queryParams.keyword || '').trim();
       }
       // 第1页先清掉上次的 AI 联想词
-      if (this.queryParams.pageNum === 1 && !append) { this.aiTerms = []; this.didYouMean = ''; }
+      if (this.queryParams.pageNum === 1 && !append) { this.aiTerms = []; this.querysTerms = []; this.aiAsyncWords = []; this.didYouMean = ''; }
+      // 请求序号：慢响应落地时若已有更新的请求则丢弃，防止旧结果覆盖新结果（如 × 联想词后的重查被初始搜索覆盖）
+      const seq = (this._searchSeq = (this._searchSeq || 0) + 1);
       esQuerys(this.queryParams).then(response => {
+        if (seq !== this._searchSeq) return;
         // 先解析扩词，后续过滤/高亮/选片段都依赖它
         const msg = response.msg || '';
         const parts = msg.split('||');
         const clean = arr => (arr || '').split(',').map(s => s.trim()).filter(s => s && s !== '查询成功' && s !== '操作成功' && s !== 'success');
         if (!append) {
-          this.aiTerms = parts.length > 1 ? clean(parts[1]) : [];
+          this.querysTerms = parts.length > 1 ? clean(parts[1]) : [];
+          this.mergeAiTerms();
           this.hlTerms = parts.length > 2 ? clean(parts[2]) : this.aiTerms.slice();
           this.didYouMean = parts.length > 3 ? (parts[3] || '').trim() : '';
           this.deptList = parts.length > 4 ? clean(parts[4]) : [];
@@ -697,6 +701,7 @@ export default {
           this.$nextTick(() => this.scrollToTop());
         }
       }).catch(err => {
+        if (seq !== this._searchSeq) return;
         console.error('全文检索失败', err);
         if (!append) {
           this.dataList = [];
@@ -943,17 +948,27 @@ export default {
         this.relatedSearches = Array.isArray(arr) ? arr : [];
       }).catch(() => { this.relatedSearches = []; });
     },
+    // 合并两路联想词（主查询下发 + 异步AI扩词）：去重并剔除已×掉的词；任意一路后返回都不丢另一路
+    mergeAiTerms() {
+      const merged = [];
+      for (const w of [...(this.querysTerms || []), ...(this.aiAsyncWords || [])]) {
+        if (w && !this.removedTerms.includes(w) && !merged.includes(w)) merged.push(w);
+      }
+      this.aiTerms = merged;
+    },
     // 异步加载 AI 扩展词，追加到 aiTerms
     loadAiExpandAsync() {
       if (!this.aiExpand) return;
       const kw = (this.queryParams.keyword || '').trim();
       if (!kw) return;
       const base = process.env.VUE_APP_BASE_API || '';
+      const seq = this._searchSeq;   // 记录发起时的搜索序号
       fetch(base + '/es/aiExpandOnly?keyword=' + encodeURIComponent(kw)).then(res => res.json()).then(res => {
+        if (seq !== this._searchSeq) return;   // 已有更新的搜索，丢弃过期扩词
         const arr = res && res.data ? res.data : [];
         if (Array.isArray(arr) && arr.length) {
-          const existing = new Set(this.aiTerms);
-          arr.forEach(w => { if (!existing.has(w) && !this.removedTerms.includes(w)) this.aiTerms.push(w); });
+          this.aiAsyncWords = arr.filter(w => w && !this.removedTerms.includes(w));
+          this.mergeAiTerms();
         }
       }).catch(() => {});
     },
