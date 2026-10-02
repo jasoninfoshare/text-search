@@ -1,4 +1,40 @@
-# 全文检索功能（Full-Text Search）
+# Full-Text Search · 全文检索功能
+
+**English** | [中文说明](#中文说明)
+
+An enterprise full-text search subsystem providing unified retrieval over official documents, announcements, and news — with LLM-based query expansion, semantic recall, reranking, and fail-closed role-based permission filtering.
+
+> This repository is a sanitized excerpt of a module I built. Internal hostnames, company names, and credentials have been replaced with placeholders; published for technical reference only.
+
+## Features
+
+- **Unified retrieval** across official documents, news, subsidiary updates, notices, and public-disclosure content
+- **LLM query expansion** — keyword association and synonym expansion, with a local synonym dictionary taking priority and the model used only as fallback
+- **Semantic recall** — embedding vectorization, Milvus vector store, and a reranker, filling in where lexical matching falls short
+- **Permission filtering** — role-tiered visibility plus per-document sharing lists; unauthorized documents never appear in results
+- **Pinyin / initials search** — Latin input mapped to Chinese candidate terms
+- **Search-quality logging** — keywords, users, and zero-result rate recorded to drive relevance work with data
+
+## Core implementation notes
+
+- **Layered recall** — exact match → local synonym/template → pinyin → LLM fallback → semantic vector recall. Each stage degrades independently, without contaminating the others.
+- **Permission model** — fail-closed role tiers: company leadership (full access), subsidiary by `tenantId`, department head by `deptId`, regular employee by shared `userIds`.
+- **Multi-term combination** — synonyms OR-ed within a group, groups AND-ed together, so generic terms cannot flood the result set.
+- **Title boosting** — `constant_score` so title hits rank first, unaffected by body-text term-frequency accumulation.
+
+## Stack
+
+| Layer | Technology |
+| --- | --- |
+| Backend | Spring Boot · Elasticsearch · Milvus · vLLM (embedding / reranker) |
+| Frontend | Vue 2 · Element UI |
+| AI | LLM keyword expansion over an OpenAI-compatible API |
+
+**Entry points** — `ElasticDetailController` (`/es/querys`) for search, `ElasticServiceImpl` for query construction, permission filtering and ranking, `SemanticService` for vector recall, `DictService` for the local dictionary, synonyms and pinyin. Full tree below.
+
+---
+
+## 中文说明
 
 企业级全文检索子系统，支持公文/公告/新闻的统一检索、AI 扩词、语义召回、权限过滤。
 
@@ -45,17 +81,6 @@ frontend/src/
 - 内网主机地址已替换为 `${ES_HOST}`、`${GPU_NODE_HOST}`、`${DB_HOST}` 等占位符；
 - 企业名称已替换为泛化描述；
 - 配置文件中的数据库密码、密钥**本就不在本功能代码内**（属全局配置，未纳入本节选）。
-
-## 本地提交后同步到 GitHub
-
-本机网络拦截了 `git push` 的数据面，因此用 `sync_to_github.py`（走 GitHub REST API）同步：
-
-- 本地 `git commit` 后，`post-commit` 钩子会自动执行同步，无需手动操作；
-- 也可手动运行：`python sync_to_github.py`（`-m "msg"` 指定提交说明，`--dry-run` 只看差异）；
-- 每次同步在 GitHub 上生成 1 个 commit，只包含相对远端有变化的文件；远端多出而本地已删的文件默认同步删除（`--keep-extra` 可关闭）；
-- token 放在仓库**外**的 `../.github-token`（即 `D:\Works\.github-token`，不会被上传），或用环境变量 `GITHUB_TOKEN`；token 吊销/过期后换新写入该文件即可。
-
-注意：GitHub 上的提交历史由同步脚本生成，与本地 commit 历史不一一对应（本地多个 commit 可能合并为一次同步 commit）。
 
 ## 核心实现要点
 
