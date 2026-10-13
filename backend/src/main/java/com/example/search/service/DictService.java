@@ -40,7 +40,10 @@ public class DictService {
     private volatile Map<String, List<String>> expandPatternMap = Collections.emptyMap();
     /** 拼音/首字母 -> 中文词（pinyin.txt，离线生成） */
     private volatile Map<String, List<String>> pinyinMap = Collections.emptyMap();
+    /** 系统入口（entrances.txt）：别名 -> [名称, URL, 描述] */
+    private volatile Map<String, String[]> entranceMap = Collections.emptyMap();
     private volatile long extMtime = -1, synMtime = -1, patternMtime = -1, zeroMtime = -1, pinyinMtime = -1;
+    private volatile long entranceMtime = -1;
     private volatile long lastCheck = 0;
 
     /** 专名分词时，间隙里这些噪声词不单独作为 AND 条件 */
@@ -161,6 +164,47 @@ public class DictService {
                 log.warn("加载 pinyin 失败: {}", e.getMessage());
             }
         }
+        // 系统入口词典（entrances.txt：名称|别名,别名|URL|描述 每行一条）
+        File ent = new File(dictDir, "entrances.txt");
+        if (ent.exists() && ent.lastModified() != entranceMtime) {
+            try {
+                Map<String, String[]> m = new LinkedHashMap<>();
+                for (String line : Files.readAllLines(ent.toPath(), StandardCharsets.UTF_8)) {
+                    String t = line.trim();
+                    if (t.isEmpty() || t.startsWith("#")) continue;
+                    String[] parts = t.split("\\|");
+                    if (parts.length < 4) continue;
+                    String[] meta = {parts[0].trim(), parts[2].trim(), parts[3].trim()};
+                    m.putIfAbsent(parts[0].trim(), meta);
+                    for (String alias : parts[1].split(",")) {
+                        String a = alias.trim();
+                        if (!a.isEmpty()) m.putIfAbsent(a, meta);
+                    }
+                }
+                entranceMap = m; entranceMtime = ent.lastModified();
+                log.info("加载 entrances {} 条别名", m.size());
+            } catch (Exception e) {
+                log.warn("加载 entrances 失败: {}", e.getMessage());
+            }
+        }
+    }
+
+    /** 命中系统入口：关键词精确等于别名，或包含系统名称。返回 [名称, URL, 描述]，未命中返回 null */
+    public String[] matchEntrance(String keyword) {
+        if (keyword == null) return null;
+        reloadIfNeeded();
+        String kw = keyword.trim().replaceAll("[\\s\\u3000]+", "").toLowerCase();
+        if (kw.isEmpty()) return null;
+        // 别名精确匹配优先（"差旅" 精确命中电建差旅）
+        for (Map.Entry<String, String[]> e : entranceMap.entrySet()) {
+            if (kw.equals(e.getKey().toLowerCase())) return e.getValue();
+        }
+        // 名称包含匹配（"电建差旅系统怎么进" 命中电建差旅）
+        for (Map.Entry<String, String[]> e : entranceMap.entrySet()) {
+            String name = e.getValue()[0];
+            if (name.length() >= 2 && kw.contains(name.toLowerCase())) return e.getValue();
+        }
+        return null;
     }
 
     /** 拼音/首字母查中文词：仅对 2+ 个纯小写字母的查询生效，查不到返回空列表。 */

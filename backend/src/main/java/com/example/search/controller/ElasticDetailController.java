@@ -444,6 +444,13 @@ public class ElasticDetailController {
 			String kw = map.get("keyword");
 			// 去空格版本用于同义词/模板扩展，避免"算电 协同"因空格无法命中"算电协同"同义词组
 			String kwNoSpace = kw == null ? null : kw.replaceAll("[\\s\\u3000]+", "");
+			// 长标题降级：整段粘贴的公文标题（含文号/书名号）提取核心题名再查，避免分词后 AND 过严导致零结果
+			String titleCore = extractTitleCore(kwNoSpace);
+			if (titleCore != null) {
+				log.info("长标题提取核心题名: [{}] -> [{}]", kw, titleCore);
+				kw = titleCore;
+				kwNoSpace = titleCore;
+			}
 			List<String> expand = new ArrayList<>();
 			// 最终参与 ES 查询的"原词"：默认用用户输入；如果输入含空格且去空格版本能命中本地同义词，
 			// 则把去空格版本作为原词，避免"算电 协同"被 ES 拆成"算电"+"协同"两个必须同时命中的词而漏召或错召
@@ -856,7 +863,13 @@ public class ElasticDetailController {
 			deptList = enrichBareDeptNames(deptList);
 			// 部门下拉排序：本部部门在前、分公司在后，按组织机构 order_num 排
 			deptList = sortDeptByOrgOrder(deptList);
-			dataTable.setMsg(realTotal + "||" + (allExpand != null ? String.join(",", allExpand) : "") + "||" + (allExpand != null ? String.join(",", allExpand) : "") + "||" + correction + "||" + (deptList != null ? String.join(",", deptList) : ""));
+			// 系统入口卡片：命中入口词典时追加 msg 第 6 段（parts[5]，格式 名称;URL;描述），前端置顶渲染
+			String entranceSeg = "";
+			try {
+				String[] entrance = dictService.matchEntrance(map.get("keyword"));
+				if (entrance != null) entranceSeg = String.join(";", entrance);
+			} catch (Exception ignore) {}
+			dataTable.setMsg(realTotal + "||" + (allExpand != null ? String.join(",", allExpand) : "") + "||" + (allExpand != null ? String.join(",", allExpand) : "") + "||" + correction + "||" + (deptList != null ? String.join(",", deptList) : "") + "||" + entranceSeg);
 		// 记录搜索使用日志，失败不影响检索
 		try {
 			String uname = "";
@@ -1276,6 +1289,31 @@ public class ElasticDetailController {
 			log.warn("部门排序失败，按原顺序返回: {}", ex.getMessage());
 			return deptList;
 		}
+	}
+
+	/**
+	 * 长标题降级：整段粘贴的公文标题提取核心题名。
+	 * 优先取书名号《》内的题名；其次匹配"关于XXX的通知/请示"模式保留 XXX；
+	 * 顺带剥掉前缀文号（0303）和版本括注（（2026年版）/（修订版）/（试行））。
+	 * 不符合公文标题模式或提取结果太短/无变化时返回 null，不改变原查询。
+	 */
+	private String extractTitleCore(String kwNoSpace) {
+		if (StringUtils.isEmpty(kwNoSpace)) return null;
+		String t = kwNoSpace.trim();
+		// 去掉前缀文号：0303、0303号
+		t = t.replaceAll("^\\d{2,6}号?", "");
+		String core = null;
+		java.util.regex.Matcher m = java.util.regex.Pattern.compile("[《『]([^》』]{4,60})[》』]").matcher(t);
+		if (m.find()) {
+			core = m.group(1);
+		} else {
+			m = java.util.regex.Pattern.compile("关于(.{4,60}?)(的通知|的请示|的报告|的纪要|的批复|的函)$").matcher(t);
+			if (m.find()) core = m.group(1);
+		}
+		if (core == null) return null;
+		core = core.replaceAll("[（(][^）)]*(年版|修订版|试行|暂行|修订)[^）)]*[）)]", "").trim();
+		if (core.length() < 4 || core.equals(t)) return null;
+		return core;
 	}
 }
 

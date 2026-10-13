@@ -139,6 +139,16 @@
       <span class="related-label">搜索该词的用户还搜了：</span>
       <span class="related-chip" v-for="(w,i) in relatedSearches" :key="i" @click="searchByTerm(w)">{{ w }}</span>
     </div>
+    <!-- 系统入口卡片：命中入口词典（如 差旅/商城）时置顶展示 -->
+    <div v-if="entrance" class="entrance-card">
+      <div class="entrance-icon">↗</div>
+      <div class="entrance-info">
+        <div class="entrance-name">{{ entrance.name }}<span class="entrance-tag">系统入口</span></div>
+        <div class="entrance-desc">{{ entrance.desc }}</div>
+      </div>
+      <a v-if="entrance.url && entrance.url !== 'TODO'" class="entrance-go" :href="entrance.url" target="_blank" rel="noopener noreferrer">立即前往 →</a>
+      <span v-else class="entrance-go entrance-go-disabled">链接维护中</span>
+    </div>
     <div class="full-search-content" :class="{ 'is-reloading': loading && dataList.length }">
       <div class="full-search-content-all">
         <!-- 加载骨架屏：仅首次搜索（无旧结果）时显示；重新搜索保留旧列表防止页面塌高跳闪 -->
@@ -270,6 +280,7 @@ export default {
       searchedKeyword: '',
       aiTerms: [],
       removedTerms: [],
+      entrance: null,
       hlTerms: [],
       didYouMean: '',
       relatedSearches: [],
@@ -612,6 +623,7 @@ export default {
         this.aiTerms = [];
         this.didYouMean = '';
         this.deptList = [];
+        this.entrance = null;
         this.loading = false;
         this.loadingMore = false;
         return;
@@ -669,6 +681,12 @@ export default {
           this.hlTerms = parts.length > 2 ? clean(parts[2]) : this.aiTerms.slice();
           this.didYouMean = parts.length > 3 ? (parts[3] || '').trim() : '';
           this.deptList = parts.length > 4 ? clean(parts[4]) : [];
+          // 系统入口卡片（msg 第 6 段：名称;URL;描述）
+          this.entrance = null;
+          if (parts.length > 5 && parts[5]) {
+            const seg = parts[5].split(';');
+            if (seg.length >= 3 && seg[0]) this.entrance = { name: seg[0], url: seg[1], desc: seg[2] };
+          }
         }
 
         const rows = response.rows || [];
@@ -2330,6 +2348,46 @@ export default {
 }
 
 // 相关搜索推荐：蓝色主题 chips
+// 系统入口卡片：蓝色渐变描边卡片，置顶于结果列表
+.entrance-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 10px 0 14px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #eef4ff 0%, #f6faff 100%);
+  border: 1px solid #c5d9f7;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+  .entrance-icon {
+    width: 38px; height: 38px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; color: #fff;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    border-radius: 10px;
+  }
+  .entrance-info { flex: 1; min-width: 0; }
+  .entrance-name {
+    font-size: 15px; font-weight: 600; color: #1e3a8a;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .entrance-tag {
+    font-size: 11px; font-weight: 400; color: #2563eb;
+    background: #dbeafe; border-radius: 4px; padding: 1px 6px;
+  }
+  .entrance-desc { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .entrance-go {
+    flex: none;
+    padding: 7px 18px;
+    font-size: 13px; color: #fff; text-decoration: none;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    border-radius: 16px;
+    transition: transform .15s ease;
+    &:hover { transform: translateY(-1px); }
+  }
+  .entrance-go-disabled { background: #cbd5e1; cursor: default; pointer-events: none; }
+}
+
 .related-searches {
   display: flex;
   flex-wrap: wrap;
