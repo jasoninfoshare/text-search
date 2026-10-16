@@ -1070,6 +1070,7 @@ export default {
       this.queryParams.keyword = w;
       this.queryParams.pageNum = 1;
       this.getList();
+      this.loadAiExpandAsync();  // 同步重新拉取 AI 扩词，避免点词后异步联想词丢失
     },
     // 移除某个联想词：记录到 removedTerms 并立即重查，后端会把该词从扩展词中剔除，结果随之刷新
     removeTerm(i) {
@@ -2329,11 +2330,12 @@ export default {
   }
 
   .ai-chip-x {
-    margin-left: 6px;
+    margin-left: 4px;
+    margin-right: -4px;
     font-size: 12px;
+    padding: 4px 4px;
     color: #d38b1d;
     border-radius: 50%;
-    padding: 1px;
     // 移除按钮常显：浅色圆底让叉叉一眼可见，不用悬停才出现
     opacity: 1;
     visibility: visible;
